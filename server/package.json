@@ -1,0 +1,19 @@
+{
+  "name": "geminiapi",
+  "version": "1.0.0",
+  "description": "this shows how can we integrate gemini API with nodejs",
+  "license": "ISC",
+  "author": "",
+  "type": "nodejs",
+  "main": "index.js",
+  "scripts": {
+    "test": ""
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.2",
+    "express": "^5.1.0"
+  }
+}
