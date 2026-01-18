@@ -45,7 +45,7 @@ export default function Topbar() {
                     <p className="text-sm text-gray-600 truncate">{user?.email}</p>
                   </div>
                   <div className="p-2">
-                    <Link to="/profile" className="block px-3 py-2 text-gray-700 hover:bg-gray-100 rounded">Profile</Link>
+                    <Link to="/dashboard/profile" className="block px-3 py-2 text-gray-700 hover:bg-gray-100 rounded">Profile</Link>
                     <Link to="/settings" className="block px-3 py-2 text-gray-700 hover:bg-gray-100 rounded">Settings</Link>
                     <button 
                       onClick={logout}

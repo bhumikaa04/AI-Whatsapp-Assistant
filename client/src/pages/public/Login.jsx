@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from "../../components/Navbar";
+import { toast } from 'react-hot-toast'; // Ensure toast is imported
 import { Eye, EyeOff, Mail, Lock, AlertCircle } from 'lucide-react';
 
 export default function Login() {
@@ -11,41 +12,41 @@ export default function Login() {
   const [rememberMe, setRememberMe] = useState(false);
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
-  
-  const { login, loginWithGoogle } = useAuth();
+
+  const { login, loginWithGoogle, profileComplete, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // Watch for Auth state changes to handle redirection
+  useEffect(() => {
+    if (!authLoading && user) {
+      if (profileComplete) {
+        navigate('/dashboard');
+      } else {
+        navigate('/dashboard/profile');
+      }
+    }
+  }, [user, profileComplete, authLoading, navigate]);
 
   const validateForm = () => {
     const newErrors = {};
-    
     if (!email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(email)) {
       newErrors.email = 'Email is invalid';
     }
-    
     if (!password) {
       newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (!validateForm()) return;
-    
     setIsLoading(true);
-    
     try {
-      const result = await login(email, password);
-      if (result.success) {
-        navigate('/dashboard');
-      }
+      await login(email, password);
     } catch (error) {
       console.error('Login error:', error);
     } finally {
@@ -55,12 +56,8 @@ export default function Login() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
-    
     try {
-      const result = await loginWithGoogle();
-      if (result.success) {
-        navigate('/dashboard');
-      }
+      await loginWithGoogle();
     } catch (error) {
       console.error('Google login error:', error);
     } finally {

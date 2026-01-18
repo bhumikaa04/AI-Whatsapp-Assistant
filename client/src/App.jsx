@@ -16,6 +16,7 @@ import FAQs from "./pages/dashboard/ExpertSystem/FAQ";
 import AIControl from "./pages/dashboard/AIControl";
 import Analytics from "./pages/dashboard/Analytics";
 import Settings from "./pages/dashboard/Settings";
+import Profile from "./pages/dashboard/Profile"
 
 /* Auth */
 import ProtectedRoute from "./components/auth/ProtectedRoute";
@@ -46,6 +47,7 @@ function App() {
             <Route path="conversations" element={<Conversations />} />
             <Route path="conversations/:id" element={<ConversationDetail />} />
             <Route path="faqs" element={<FAQs />} />
+            <Route path="profile" element={<Profile />} />
             <Route path="ai-control" element={<AIControl />} />
             <Route path="analytics" element={<Analytics />} />
             <Route path="settings" element={<Settings />} />

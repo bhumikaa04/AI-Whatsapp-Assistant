@@ -29,6 +29,8 @@ app.get("/", (req, res) => {
 
 // routes
 
+console.log("server file running")
+
 app.use((req, res, next) => {
   console.log("➡️ Incoming:", req.method, req.url);
   next();
@@ -48,6 +50,9 @@ app.use("/api/conversations", require("./routes/conversations.routes"));
 app.use("/api/faqs", require("./routes/faq.routes"));
 app.use("/api/ai", require("./routes/ai.routes"));
 app.use("/api/analytics", require("./routes/analytics.routes"));
+app.use("/api/auth" , require("./routes/auth.routes")); 
+const settingsRoutes = require("./routes/settings.routes");
+app.use("/api/user", settingsRoutes);
 
 
 app.listen(3000, () =>

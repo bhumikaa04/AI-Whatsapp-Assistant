@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import Navbar from "../../components/Navbar";
@@ -18,19 +18,28 @@ export default function Signup() {
   const [isLoading, setIsLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   
-  const { signup, loginWithGoogle } = useAuth();
+  const { signup, loginWithGoogle, profileComplete, user, loading: authLoading } = useAuth();
   const navigate = useNavigate();
+
+  // Watch for Auth state changes to handle redirection
+  useEffect(() => {
+    if (!authLoading && user) {
+      if (profileComplete) {
+        navigate('/dashboard');
+      } else {
+        navigate('/dashboard/profile');
+      }
+    }
+  }, [user, profileComplete, authLoading, navigate]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
     
-    // Clear error for this field
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
     }
     
-    // Check password strength
     if (name === 'password') {
       let strength = 0;
       if (value.length >= 8) strength += 1;
@@ -43,46 +52,31 @@ export default function Signup() {
 
   const validateForm = () => {
     const newErrors = {};
-    
-    if (!formData.name.trim()) {
-      newErrors.name = 'Name is required';
-    }
-    
+    if (!formData.name.trim()) newErrors.name = 'Name is required';
     if (!formData.email.trim()) {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Email is invalid';
     }
-    
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
       newErrors.password = 'Password must be at least 6 characters';
     }
-    
-    if (!formData.confirmPassword) {
-      newErrors.confirmPassword = 'Please confirm your password';
-    } else if (formData.password !== formData.confirmPassword) {
+    if (formData.password !== formData.confirmPassword) {
       newErrors.confirmPassword = 'Passwords do not match';
     }
-    
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
     if (!validateForm()) return;
-    
     setIsLoading(true);
-    
     try {
-      const result = await signup(formData.email, formData.password, formData.name);
-      if (result.success) {
-        toast.success('Account created successfully!');
-        navigate('/dashboard');
-      }
+      // Logic handled by useEffect once this succeeds
+      await signup(formData.email, formData.password, formData.name);
     } catch (error) {
       console.error('Signup error:', error);
     } finally {
@@ -92,12 +86,8 @@ export default function Signup() {
 
   const handleGoogleSignup = async () => {
     setIsLoading(true);
-    
     try {
-      const result = await loginWithGoogle();
-      if (result.success) {
-        navigate('/dashboard');
-      }
+      await loginWithGoogle();
     } catch (error) {
       console.error('Google signup error:', error);
     } finally {
@@ -106,25 +96,13 @@ export default function Signup() {
   };
 
   const getPasswordStrengthColor = () => {
-    switch (passwordStrength) {
-      case 0: return 'bg-gray-200';
-      case 1: return 'bg-red-500';
-      case 2: return 'bg-yellow-500';
-      case 3: return 'bg-blue-500';
-      case 4: return 'bg-green-500';
-      default: return 'bg-gray-200';
-    }
+    const colors = ['bg-gray-200', 'bg-red-500', 'bg-yellow-500', 'bg-blue-500', 'bg-green-500'];
+    return colors[passwordStrength] || 'bg-gray-200';
   };
 
   const getPasswordStrengthText = () => {
-    switch (passwordStrength) {
-      case 0: return 'Very weak';
-      case 1: return 'Weak';
-      case 2: return 'Fair';
-      case 3: return 'Good';
-      case 4: return 'Strong';
-      default: return '';
-    }
+    const texts = ['Very weak', 'Weak', 'Fair', 'Good', 'Strong'];
+    return texts[passwordStrength] || '';
   };
 
   return (
