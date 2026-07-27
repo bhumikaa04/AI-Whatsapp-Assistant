@@ -14,6 +14,7 @@ const BusinessProfileSchema = new mongoose.Schema({
   policies: [{ type: String }],
   additionalInstructions: { type: String, default: "" },
   tone: { type: String, default: "Professional" },
+  profileVersion: { type: Number, default: 1 }, 
   language: { type: String, default: "English" }
 }, { timestamps: true });
 

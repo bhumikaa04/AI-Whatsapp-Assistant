@@ -7,33 +7,130 @@ const { getEmbedding } = require("../services/ai.services");
  * GET /api/pending-ai/queue
  * Fetches all unreviewed items for the active system instance
  */
+
+
+/**
+ * GET /api/pending-ai/queue
+ * Fetches items grouped by categories, confidence levels, and pipeline metrics
+ */
 exports.getQueue = async (req, res) => {
   try {
-    // Check for user session context or query parameter
     const expertSystemID = req.user?.expertSystemID || req.query.expertSystemID;
-
-    // Initialize a dynamic filter condition object
-    let queryCondition = { status: "pending" };
-
-    // Apply systemic filtering if context exists
-    if (expertSystemID) {
-      queryCondition.expertSystemID = expertSystemID;
-      console.log(`🔍 [AI Control Backend] Filtering queue by expertSystemID: ${expertSystemID}`);
-    } else {
-      console.warn("⚠️ [AI Control Backend] No expertSystemID context provided. Falling back to global queue lookups for development.");
+    if (!expertSystemID) {
+      return res.status(400).json({ error: "Missing expertSystemID parameter context." });
     }
 
-    // Fetch the data array records cleanly
-    const queue = await PendingAIResponse.find(queryCondition)
-      .sort({ createdAt: -1 })
-      .lean();
+    // 1. Fetch pending items
+    const pendingItems = await PendingAIResponse.find({
+      expertSystemID,
+      status: "pending"
+    }).sort({ createdAt: -1 }).lean();
 
-    return res.status(200).json(queue);
+    // 2. Fetch metrics for analytics (Step 11)
+    const metricsRaw = await PendingAIResponse.aggregate([
+      { $match: { expertSystemID } },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const analytics = {
+      totalGenerated: 0,
+      approved: 0,
+      rejected: 0,
+      pending: 0
+    };
+
+    metricsRaw.forEach((m) => {
+      if (m._id === "approved" || m._id === "edited") analytics.approved += m.count;
+      else if (m._id === "rejected") analytics.rejected += m.count;
+      else if (m._id === "pending") analytics.pending += m.count;
+      analytics.totalGenerated += m.count;
+    });
+
+    // 3. Group pending items by Category (Step 7) & inject Confidence Indicators (Step 8)
+    const groupedQueue = {};
+
+    pendingItems.forEach((item) => {
+      // Color tier tags
+      let confidenceTier = "red";
+      if (item.confidence >= 95) confidenceTier = "green";
+      else if (item.confidence >= 80) confidenceTier = "yellow";
+
+      const formattedItem = { ...item, confidenceTier };
+
+      if (!groupedQueue[item.category]) {
+        groupedQueue[item.category] = [];
+      }
+      groupedQueue[item.category].push(formattedItem);
+    });
+
+    return res.status(200).json({
+      success: true,
+      analytics,
+      groupedQueue
+    });
   } catch (error) {
-    console.error("❌ Error fetching pending AI queue:", error);
-    return res.status(500).json({ error: "Internal operational queue breakdown." });
+    console.error("❌ Error fetching pending queue pipeline data:", error);
+    return res.status(500).json({ error: "Failed to retrieve queue analytics." });
   }
 };
+
+/**
+ * POST /api/pending-ai/bulk-action
+ * Bulk approve or reject by Category or explicit ID array (Step 9)
+ */
+exports.bulkAction = async (req, res) => {
+  try {
+    const { expertSystemID, action, category, itemIds } = req.body;
+
+    if (!["approve", "reject"].includes(action)) {
+      return res.status(400).json({ error: "Invalid action. Use 'approve' or 'reject'." });
+    }
+
+    let filter = { status: "pending" };
+    if (expertSystemID) filter.expertSystemID = expertSystemID;
+    if (category) filter.category = category;
+    if (Array.isArray(itemIds) && itemIds.length > 0) filter._id = { $in: itemIds };
+
+    const itemsToProcess = await PendingAIResponse.find(filter);
+
+    if (itemsToProcess.length === 0) {
+      return res.status(200).json({ success: true, processedCount: 0, message: "No matching pending items found." });
+    }
+
+    if (action === "approve") {
+      // Build bulk FAQ insertion payload
+      const faqDocs = itemsToProcess.map((item) => ({
+        expertSystemID: item.expertSystemID,
+        question: item.question,
+        normalizedQuestion: item.normalizedQuestion,
+        answer: item.generatedAnswer,
+        embedding: item.questionEmbedding,
+        priority: 1
+      }));
+
+      // Insert directly into FAQs
+      await FAQ.insertMany(faqDocs, { ordered: false });
+
+      // Update statuses in Pending Queue
+      const ids = itemsToProcess.map((i) => i._id);
+      await PendingAIResponse.updateMany({ _id: { $in: ids } }, { status: "approved" }, { runValidators: false });
+    } else {
+      // Action === "reject"
+      const ids = itemsToProcess.map((i) => i._id);
+      await PendingAIResponse.updateMany({ _id: { $in: ids } }, { status: "rejected" }, { runValidators: false });
+    }
+
+    return res.status(200).json({
+      success: true,
+      processedCount: itemsToProcess.length,
+      message: `Successfully executed bulk ${action} on ${itemsToProcess.length} items.`
+    });
+  } catch (error) {
+    console.error("❌ Bulk action failed:", error);
+    return res.status(500).json({ error: "Failed to execute bulk queue operation." });
+  }
+};
+
 
 /**
  * POST /api/pending-ai/:id/approve

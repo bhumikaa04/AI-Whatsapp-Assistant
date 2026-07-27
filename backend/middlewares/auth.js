@@ -1,4 +1,5 @@
 const admin = require("../config/firebaseAdmin");
+const User = require("../models/User"); // 👈 Import User model
 
 const authMiddleware = async (req, res, next) => {
   try {
@@ -30,7 +31,7 @@ const authMiddleware = async (req, res, next) => {
     
     console.log("✅ Token verified for:", decodedToken.email);
     
-    // Attach user info to request
+    // 1. Attach raw Firebase user info to request
     req.firebaseUser = {
       uid: decodedToken.uid,
       email: decodedToken.email,
@@ -38,6 +39,23 @@ const authMiddleware = async (req, res, next) => {
       photo: decodedToken.picture,
       ...decodedToken
     };
+
+    // 2. 🚀 Fetch MongoDB User & attach tenant/system details
+    const dbUser = await User.findOne({ email: decodedToken.email });
+
+    if (dbUser) {
+      req.user = {
+        _id: dbUser._id,
+        email: dbUser.email,
+        fullName: dbUser.fullName,
+        phoneNumber: dbUser.phoneNumber,
+        phoneVerified: dbUser.phoneVerified,
+        expertSystemID: dbUser.expertSystemID // 🔒 Injected for tenant isolation
+      };
+    } else {
+      // Handles initial login calls (e.g. /auth/sync-user) where MongoDB user isn't created yet
+      req.user = null;
+    }
 
     next();
   } catch (error) {

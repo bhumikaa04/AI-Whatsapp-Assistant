@@ -25,6 +25,11 @@ const navItems = [
     icon: <HelpCircle size={20} />
   },
   {
+    name: "Leads CRM",
+    path: "/dashboard/leads",
+    icon: <MessageSquare size={20} />
+  },
+  {
     name: "AI Control",
     path: "/dashboard/ai-control",
     icon: <Brain size={20} />

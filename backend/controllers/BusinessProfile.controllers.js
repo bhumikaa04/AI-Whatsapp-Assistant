@@ -1,5 +1,6 @@
 // server/controllers/businessProfile.controller.js
 const BusinessProfile = require("../models/BusinessProfile");
+const { generateBusinessKnowledge } = require("../services/businessKnowledgeGenerator");
 
 /**
  * GET /api/business-profile
@@ -14,8 +15,6 @@ exports.getProfile = async (req, res) => {
         error: "Missing expertSystemID context parameter." 
       });
     }
-
-    console.log(`🔍 [Business Profile] Fetching profile for expertSystemID: ${expertSystemID}`);
 
     const profile = await BusinessProfile.findOne({ expertSystemID });
 
@@ -36,7 +35,7 @@ exports.getProfile = async (req, res) => {
 
 /**
  * POST /api/business-profile
- * Creates or updates the business profile
+ * Creates or updates the business profile and triggers the AI Knowledge Pipeline
  */
 exports.createOrUpdateProfile = async (req, res) => {
   try {
@@ -65,52 +64,74 @@ exports.createOrUpdateProfile = async (req, res) => {
       });
     }
 
-    console.log(`🔍 [Business Profile] Creating/Updating profile for expertSystemID: ${expertSystemID}`);
+    let profile = await BusinessProfile.findOne({ expertSystemID });
+    let affectedCategories = null; // null triggers full generation (all categories)
 
-    // Check if profile exists
-    const existingProfile = await BusinessProfile.findOne({ expertSystemID });
+    if (profile) {
+      // 1. Detect which specific sections changed for selective generation
+      const newProducts = products || [];
+      const newServices = services || [];
+      const newPolicies = policies || [];
 
-    // Prepare update data
-    const updateData = {
-      businessName: businessName.trim(),
-      businessDescription: businessDescription?.trim() || "",
-      products: products || [],
-      services: services || [],
-      policies: policies || [],
-      additionalInstructions: additionalInstructions?.trim() || "",
-      tone: tone || "Professional",
-      language: language || "English"
-    };
+      const changedProducts = JSON.stringify(profile.products || []) !== JSON.stringify(newProducts);
+      const changedServices = JSON.stringify(profile.services || []) !== JSON.stringify(newServices);
+      const changedPolicies = JSON.stringify(profile.policies || []) !== JSON.stringify(newPolicies);
 
-    let profile;
+      if (changedProducts || changedServices || changedPolicies) {
+        affectedCategories = [];
+        if (changedProducts) affectedCategories.push("product", "pricing", "upsell", "objection");
+        if (changedServices) affectedCategories.push("service", "pricing", "lead_qualification");
+        if (changedPolicies) affectedCategories.push("policy", "general");
 
-    if (existingProfile) {
-      // Update existing profile
-      profile = await BusinessProfile.findOneAndUpdate(
-        { expertSystemID },
-        updateData,
-        { new: true, runValidators: true }
-      );
-      console.log(`✅ [Business Profile] Updated profile for expertSystemID: ${expertSystemID}`);
+        // Deduplicate category array
+        affectedCategories = [...new Set(affectedCategories)];
+      }
+
+      // 2. Increment profile version and update fields
+      profile.profileVersion = (profile.profileVersion || 1) + 1;
+      profile.businessName = businessName.trim();
+      profile.businessDescription = businessDescription?.trim() || "";
+      profile.products = newProducts;
+      profile.services = newServices;
+      profile.policies = newPolicies;
+      profile.additionalInstructions = additionalInstructions?.trim() || "";
+      profile.tone = tone || "Professional";
+      profile.language = language || "English";
+
+      await profile.save();
+      console.log(`✅ [Business Profile] Updated profile (v${profile.profileVersion}) for expertSystemID: ${expertSystemID}`);
     } else {
-      // Create new profile
+      // 3. Create brand-new profile
       profile = await BusinessProfile.create({
         expertSystemID,
-        ...updateData
+        businessName: businessName.trim(),
+        businessDescription: businessDescription?.trim() || "",
+        products: products || [],
+        services: services || [],
+        policies: policies || [],
+        additionalInstructions: additionalInstructions?.trim() || "",
+        tone: tone || "Professional",
+        language: language || "English",
+        profileVersion: 1
       });
-      console.log(`✅ [Business Profile] Created new profile for expertSystemID: ${expertSystemID}`);
+      console.log(`✅ [Business Profile] Created new profile (v1) for expertSystemID: ${expertSystemID}`);
     }
+
+    // 4. Trigger Knowledge Pipeline asynchronously (non-blocking)
+    generateBusinessKnowledge(profile, affectedCategories).catch((err) => {
+      console.error("❌ [Knowledge Pipeline] Background generation failed:", err.message);
+    });
 
     return res.status(200).json({
       success: true,
-      message: existingProfile ? "Business profile updated successfully." : "Business profile created successfully.",
+      message: "Business profile saved successfully. AI Knowledge Pipeline triggered.",
+      profileVersion: profile.profileVersion,
       data: profile
     });
 
   } catch (error) {
     console.error("❌ Error saving business profile:", error);
     
-    // Handle duplicate key error
     if (error.code === 11000) {
       return res.status(409).json({ 
         error: "A business profile already exists for this expert system." 
@@ -125,16 +146,14 @@ exports.createOrUpdateProfile = async (req, res) => {
 
 /**
  * PUT /api/business-profile
- * Alias for createOrUpdateProfile (for consistency)
+ * Alias for createOrUpdateProfile
  */
 exports.updateProfile = async (req, res) => {
-  // Reuse the same logic
   return exports.createOrUpdateProfile(req, res);
 };
 
 /**
  * DELETE /api/business-profile
- * Deletes the business profile
  */
 exports.deleteProfile = async (req, res) => {
   try {
@@ -145,8 +164,6 @@ exports.deleteProfile = async (req, res) => {
         error: "Missing expertSystemID context parameter." 
       });
     }
-
-    console.log(`🗑️ [Business Profile] Deleting profile for expertSystemID: ${expertSystemID}`);
 
     const profile = await BusinessProfile.findOneAndDelete({ expertSystemID });
 
@@ -171,7 +188,6 @@ exports.deleteProfile = async (req, res) => {
 
 /**
  * GET /api/business-profile/check
- * Checks if a profile exists
  */
 exports.checkProfileExists = async (req, res) => {
   try {
@@ -200,7 +216,6 @@ exports.checkProfileExists = async (req, res) => {
 
 /**
  * PATCH /api/business-profile/tone
- * Updates only the tone setting
  */
 exports.updateTone = async (req, res) => {
   try {
@@ -247,7 +262,6 @@ exports.updateTone = async (req, res) => {
 
 /**
  * PATCH /api/business-profile/language
- * Updates only the language setting
  */
 exports.updateLanguage = async (req, res) => {
   try {

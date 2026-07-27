@@ -1,11 +1,138 @@
 const User = require("../models/User");
+const ExpertSystem = require("../models/ExpertSystem");
 const twilioService = require("../services/twilio.service");
 
 // 1. SYNC USER
+// exports.syncUser = async (req, res) => {
+//   try {
+//     const { uid, email, name, photo } = req.firebaseUser;
+
+//     let user = await User.findOne({ email });
+
+//     if (!user) {
+//       user = await User.create({
+//         firebaseUid: uid,
+//         fullName: name || "User",
+//         email,
+//         profilePhoto: photo,
+//         authProvider: "google",
+//       });
+//     }
+
+//     const isProfileComplete = user.phoneVerified === true
+    
+
+//     res.json({
+//       success: true,
+//       user: {
+//         _id: user._id,
+//         fullName: user.fullName,
+//         email: user.email,
+//         phoneNumber: user.phoneNumber,
+//         phoneVerified: user.phoneVerified,
+//         expertSystemID: user.expertSystemID,
+//       },
+//       isProfileComplete,
+//     });
+//   } catch (error) {
+//     console.error("Sync error:", error);
+//     res.status(500).json({ 
+//       success: false, 
+//       message: "Server error" 
+//     });
+//   }
+// };
+
+// controllers/auth.controller.js
+
+// exports.syncUser = async (req, res) => {
+//   try {
+//     const { uid, email, name, photo } = req.firebaseUser;
+
+//     // 1. Find or create the user in MongoDB
+//     let user = await User.findOne({ email });
+
+//     if (!user) {
+//       user = await User.create({
+//         firebaseUid: uid,
+//         fullName: name || "User",
+//         email,
+//         profilePhoto: photo,
+//         authProvider: "google",
+//       });
+//     }
+
+//     // 2. Safe ExpertSystem Provisioning
+//     let systemId = user.expertSystemID;
+
+//     try {
+//       // Find system by ownerUserId (matching schema) or user._id
+//       let system = await ExpertSystem.findOne({
+//         $or: [
+//           { ownerUserId: user._id.toString() },
+//           { ownerUserId: user._id },
+//           { _id: user.expertSystemID }
+//         ]
+//       });
+
+//       if (!system) {
+//         // Build document fulfilling both ownerUserId and ownerPhone schema requirements
+//         system = new ExpertSystem({
+//           ownerUserId: user._id.toString(), // 👈 Fulfills ownerUserId requirement
+//           ownerPhone: user.phoneNumber || `UNVERIFIED_${user._id}`, // 👈 Fulfills ownerPhone requirement safely
+//           name: `${user.fullName || "User"}'s Assistant`,
+//         });
+
+//         await system.save();
+//       } else if (user.phoneNumber && system.ownerPhone !== user.phoneNumber) {
+//         // Sync phone to system once user verifies phone number
+//         system.ownerPhone = user.phoneNumber;
+//         await system.save();
+//       }
+
+//       systemId = system._id;
+
+//       // Link system back to User model if missing
+//       if (!user.expertSystemID || user.expertSystemID.toString() !== systemId.toString()) {
+//         user.expertSystemID = systemId;
+//         await user.save();
+//       }
+//     } catch (sysError) {
+//       console.error("⚠️ Failed to provision ExpertSystem during sync:", sysError);
+//     }
+
+//     const isProfileComplete = user.phoneVerified === true;
+
+//     // 3. Return user context to frontend
+//     res.json({
+//       success: true,
+//       user: {
+//         _id: user._id,
+//         fullName: user.fullName,
+//         email: user.email,
+//         phoneNumber: user.phoneNumber,
+//         phoneVerified: user.phoneVerified,
+//         expertSystemID: systemId || user._id,
+//       },
+//       isProfileComplete,
+//     });
+//   } catch (error) {
+//     console.error("❌ Sync error:", error);
+//     res.status(500).json({ 
+//       success: false, 
+//       message: error.message || "Server error during sync" 
+//     });
+//   }
+// };
+
+
+// controllers/auth.controller.js
+
 exports.syncUser = async (req, res) => {
   try {
     const { uid, email, name, photo } = req.firebaseUser;
 
+    // 1. Find or create user in MongoDB
     let user = await User.findOne({ email });
 
     if (!user) {
@@ -18,9 +145,49 @@ exports.syncUser = async (req, res) => {
       });
     }
 
-    const isProfileComplete = user.phoneVerified === true
-    
+    // 2. Safe ExpertSystem Provisioning
+    let systemId = user.expertSystemID;
 
+    try {
+      // Find system by ownerUserId or by expertSystemID link
+      let system = await ExpertSystem.findOne({
+        $or: [
+          { ownerUserId: user._id.toString() },
+          { ownerUserId: user._id },
+          ...(user.expertSystemID ? [{ _id: user.expertSystemID }] : [])
+        ]
+      });
+
+      if (!system) {
+        // Build document fulfilling ownerUserId and ownerPhone schema requirements
+        system = new ExpertSystem({
+          ownerUserId: user._id.toString(),
+          ownerPhone: user.phoneNumber || `UNVERIFIED_${user._id}`,
+          name: `${user.fullName || "User"}'s Assistant`,
+        });
+
+        await system.save();
+      } else if (user.phoneNumber && system.ownerPhone !== user.phoneNumber) {
+        // Sync phone to system once user verifies phone number
+        system.ownerPhone = user.phoneNumber;
+        await system.save();
+      }
+
+      systemId = system._id;
+
+      // Ensure user document points to this system ID
+      if (!user.expertSystemID || user.expertSystemID.toString() !== systemId.toString()) {
+        user.expertSystemID = systemId;
+        await user.save();
+      }
+
+    } catch (sysError) {
+      console.error("⚠️ Failed to provision ExpertSystem during sync:", sysError);
+    }
+
+    const isProfileComplete = user.phoneVerified === true;
+
+    // 3. Return user context to frontend
     res.json({
       success: true,
       user: {
@@ -29,19 +196,18 @@ exports.syncUser = async (req, res) => {
         email: user.email,
         phoneNumber: user.phoneNumber,
         phoneVerified: user.phoneVerified,
-        expertSystemID: user.expertSystemID,
+        expertSystemID: systemId || user.expertSystemID || user._id,
       },
       isProfileComplete,
     });
   } catch (error) {
-    console.error("Sync error:", error);
+    console.error("❌ Sync error:", error);
     res.status(500).json({ 
       success: false, 
-      message: "Server error" 
+      message: error.message || "Server error during sync" 
     });
   }
 };
-
 // 2. SEND OTP (with Twilio)
 exports.sendOtp = async (req, res) => {
   try {

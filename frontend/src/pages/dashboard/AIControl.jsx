@@ -1,30 +1,36 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import API from "../../services/api";
+import { useAuth } from '../../context/AuthContext';
 
 export default function AIControl() {
+  const { user } = useAuth(); 
   const [pendingResponses, setPendingResponses] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editText, setEditText] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Fetch pending queue on load
-  useEffect(() => {
-    fetchPendingQueue();
-  }, []);
+  // Extract systemID safely from authenticated user context
+  const systemID = user?.expertSystemID || user?._id;
 
-  const fetchPendingQueue = async () => {
+  // Memoize fetch function to prevent unnecessary re-renders / loops
+const fetchPendingQueue = useCallback(async () => {
+    if (!systemID) return;
+    
     try {
       setLoading(true);
-      const response = await API.get('/pending-ai/queue');
+      const response = await API.get(`/pending-ai/queue?expertSystemID=${systemID}`);
+      const data = response.data;
       
-      // FIX: Ensure response payload is an array before committing to state
-      if (response.data && Array.isArray(response.data)) {
-        setPendingResponses(response.data);
-      } else if (response.data && Array.isArray(response.data.queue)) {
-        // Fallback case if your controller wraps it in a nested key object
-        setPendingResponses(response.data.queue);
+      if (Array.isArray(data)) {
+        setPendingResponses(data);
+      } else if (Array.isArray(data?.queue)) {
+        setPendingResponses(data.queue);
+      } else if (data?.groupedQueue && typeof data.groupedQueue === 'object') {
+        // 💡 Extract all arrays from category keys and flatten into a single array
+        const flatList = Object.values(data.groupedQueue).flat();
+        setPendingResponses(flatList);
       } else {
-        console.error("Expected an array from backend API but received:", response.data);
+        console.error("Unrecognized queue payload structure:", data);
         setPendingResponses([]);
       }
     } catch (err) {
@@ -33,7 +39,12 @@ export default function AIControl() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [systemID]);
+
+  // Fetch pending queue on mount and whenever systemID changes
+  useEffect(() => {
+    fetchPendingQueue();
+  }, [fetchPendingQueue]);
 
   const handleApprove = async (id) => {
     try {
@@ -72,7 +83,6 @@ export default function AIControl() {
     return <div className="p-8 text-slate-500">Loading AI human-review queue...</div>;
   }
 
-  // Safe checks for mapping length logic 
   const safeQueueLength = Array.isArray(pendingResponses) ? pendingResponses.length : 0;
 
   return (
@@ -80,7 +90,9 @@ export default function AIControl() {
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">AI Control</h1>
-          <p className="text-sm text-slate-500">Review, edit, or approve Ollama's generated responses before they commit to permanent AI Knowledge bases.</p>
+          <p className="text-sm text-slate-500">
+            Review, edit, or approve Ollama's generated responses before they commit to permanent AI Knowledge bases.
+          </p>
         </div>
         <span className="bg-amber-50 text-amber-700 text-xs font-semibold px-3 py-1.5 rounded-full border border-amber-200">
           {safeQueueLength} Actions Required
@@ -90,7 +102,9 @@ export default function AIControl() {
       {safeQueueLength === 0 ? (
         <div className="bg-white border border-slate-150 rounded-xl p-12 text-center shadow-sm">
           <p className="text-slate-500 font-medium">All caught up! 🎉</p>
-          <p className="text-xs text-slate-400 mt-1">Ollama generations haven't hit exceptions or fallback conditions requiring manual review.</p>
+          <p className="text-xs text-slate-400 mt-1">
+            Ollama generations haven't hit exceptions or fallback conditions requiring manual review.
+          </p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -130,7 +144,7 @@ export default function AIControl() {
               {/* Action Buttons Footer */}
               <div className="flex justify-between items-center pt-3 border-t border-slate-100">
                 <span className="text-xs text-slate-400">
-                  Confidence Score: <span className="font-semibold text-emerald-600">{(item.confidence * 100)}%</span>
+                  Confidence Score: <span className="font-semibold text-emerald-600">{((item.confidence || 0) * 100).toFixed(0)}%</span>
                 </span>
                 
                 <div className="flex space-x-2">

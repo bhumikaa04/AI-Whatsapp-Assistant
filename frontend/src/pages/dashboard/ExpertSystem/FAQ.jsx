@@ -2,17 +2,22 @@
 import { useEffect, useMemo, useState } from "react";
 import API from "../../../services/api";
 import FAQForm from "./FAQForm";
+import {useAuth} from "../../../context/AuthContext"
 
 export default function FAQs() {
+  const { user } = useAuth();
   const [faqs, setFaqs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null); // Track loader state for specific item deletion
   const [query, setQuery] = useState("");
 
+  const systemID = user?.expertSystemID || user?._id;
+
   // Fetch the current user's active FAQ data array
   const fetchFAQs = () => {
+    if (!systemID) return;
     setLoading(true);
-    API.get("/faqs")
+    API.get(`/faqs?expertSystemID=${systemID}`)
       .then((res) => setFaqs(res.data))
       .catch((err) => console.error("Error loading FAQs:", err))
       .finally(() => setLoading(false));

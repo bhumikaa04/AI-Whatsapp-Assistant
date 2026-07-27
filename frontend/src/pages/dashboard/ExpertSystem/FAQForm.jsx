@@ -1,8 +1,10 @@
 // pages/dashboard/ExpertSystem/FAQForm.jsx
 import { useState } from "react";
 import API from "../../../services/api";
+import { useAuth } from "../../../context/AuthContext";
 
 export default function FAQForm({ onSuccess }) {
+  const {user} = useAuth(); 
   const [form, setForm] = useState({
     question: "",
     answer: "",
@@ -11,6 +13,8 @@ export default function FAQForm({ onSuccess }) {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const SystemID = user?._id || user?.expertSystemID;
 
   async function submit(e) {
     e.preventDefault();
@@ -26,6 +30,7 @@ export default function FAQForm({ onSuccess }) {
 
     // Prepare payload data structures
     const payload = {
+      expertSystemID: SystemID, 
       question: form.question.trim(),
       answer: form.answer.trim(),
       priority: Number(form.priority),

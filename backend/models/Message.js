@@ -1,4 +1,4 @@
-import mongoose from "mongoose";
+const mongoose = require("mongoose");
 
 const messageSchema = new mongoose.Schema({
   leadId: {
@@ -48,4 +48,5 @@ const messageSchema = new mongoose.Schema({
   }
 });
 
-export default mongoose.model("Message", messageSchema);
+// ✅ Export directly using CommonJS module.exports
+module.exports = mongoose.model("Message", messageSchema);
