@@ -16,7 +16,7 @@ const { buildContextPrompt } = require("../services/promptBuilder.service");
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 /**
- * Upgraded Substring/Keyword checker to match variations like "helloz"
+ * Upgraded Substring/Keyword checker that only matches whole words
  */
 function isLowSignalMessage(text) {
   const normalizedText = normalize(text);
@@ -24,16 +24,13 @@ function isLowSignalMessage(text) {
 
   const lowSignalPhrases = ["ok", "okay", "thanks", "thank you", "bye", "hi", "hello", "hey", "peeps"];
   
-  // 1. Check exact match
-  if (lowSignalPhrases.includes(normalizedText)) return true;
-  
-  // 2. Check if any low-signal keyword is a substring of the message text
-  const containsKeyword = lowSignalPhrases.some(phrase => normalizedText.includes(phrase));
-  if (containsKeyword) return true;
+  // Split into actual clean words
+  const words = normalizedText.split(/\s+/);
 
-  // 3. Fallback word-by-word check
-  const words = normalizedText.split(" ");
-  return words.every(word => lowSignalPhrases.some(phrase => word.includes(phrase)));
+  // If the entire message is just 1 or 2 low-signal words (e.g., "hey", "hi there", "ok thanks")
+  const isOnlyGreetings = words.every(word => lowSignalPhrases.includes(word));
+  
+  return isOnlyGreetings;
 }
 
 /**

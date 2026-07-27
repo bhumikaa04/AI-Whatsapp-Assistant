@@ -8,5 +8,4 @@ router.post("/bulk-action", pendingAIController.bulkAction);
 router.post("/:id/approve", pendingAIController.approveResponse);
 router.post("/:id/edit", pendingAIController.editAndApproveResponse);
 router.post("/:id/reject", pendingAIController.rejectResponse);
-
 module.exports = router;

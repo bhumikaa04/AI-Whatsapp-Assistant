@@ -1,213 +1,169 @@
-// server/controllers/pendingAI.controller.js
+// controllers/pendingAI.controllers.js
 const PendingAIResponse = require("../models/PendingAIResponse");
-const FAQ = require("../models/FAQ"); 
-const { getEmbedding } = require("../services/ai.services");
+const FAQ = require("../models/FAQ");
+const { normalize } = require("../utils/normalize");
 
 /**
- * GET /api/pending-ai/queue
- * Fetches all unreviewed items for the active system instance
- */
-
-
-/**
- * GET /api/pending-ai/queue
- * Fetches items grouped by categories, confidence levels, and pipeline metrics
+ * Fetch pending AI response items for an Expert System
  */
 exports.getQueue = async (req, res) => {
   try {
-    const expertSystemID = req.user?.expertSystemID || req.query.expertSystemID;
+    const { expertSystemID } = req.query;
+
     if (!expertSystemID) {
-      return res.status(400).json({ error: "Missing expertSystemID parameter context." });
+      return res.status(400).json({ success: false, message: "expertSystemID is required" });
     }
 
-    // 1. Fetch pending items
-    const pendingItems = await PendingAIResponse.find({
+    const queue = await PendingAIResponse.find({
       expertSystemID,
       status: "pending"
-    }).sort({ createdAt: -1 }).lean();
-
-    // 2. Fetch metrics for analytics (Step 11)
-    const metricsRaw = await PendingAIResponse.aggregate([
-      { $match: { expertSystemID } },
-      { $group: { _id: "$status", count: { $sum: 1 } } }
-    ]);
-
-    const analytics = {
-      totalGenerated: 0,
-      approved: 0,
-      rejected: 0,
-      pending: 0
-    };
-
-    metricsRaw.forEach((m) => {
-      if (m._id === "approved" || m._id === "edited") analytics.approved += m.count;
-      else if (m._id === "rejected") analytics.rejected += m.count;
-      else if (m._id === "pending") analytics.pending += m.count;
-      analytics.totalGenerated += m.count;
-    });
-
-    // 3. Group pending items by Category (Step 7) & inject Confidence Indicators (Step 8)
-    const groupedQueue = {};
-
-    pendingItems.forEach((item) => {
-      // Color tier tags
-      let confidenceTier = "red";
-      if (item.confidence >= 95) confidenceTier = "green";
-      else if (item.confidence >= 80) confidenceTier = "yellow";
-
-      const formattedItem = { ...item, confidenceTier };
-
-      if (!groupedQueue[item.category]) {
-        groupedQueue[item.category] = [];
-      }
-      groupedQueue[item.category].push(formattedItem);
-    });
+    }).sort({ createdAt: -1 });
 
     return res.status(200).json({
       success: true,
-      analytics,
-      groupedQueue
+      count: queue.length,
+      queue
     });
   } catch (error) {
-    console.error("❌ Error fetching pending queue pipeline data:", error);
-    return res.status(500).json({ error: "Failed to retrieve queue analytics." });
+    console.error("Error fetching pending queue:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
 /**
- * POST /api/pending-ai/bulk-action
- * Bulk approve or reject by Category or explicit ID array (Step 9)
- */
-exports.bulkAction = async (req, res) => {
-  try {
-    const { expertSystemID, action, category, itemIds } = req.body;
-
-    if (!["approve", "reject"].includes(action)) {
-      return res.status(400).json({ error: "Invalid action. Use 'approve' or 'reject'." });
-    }
-
-    let filter = { status: "pending" };
-    if (expertSystemID) filter.expertSystemID = expertSystemID;
-    if (category) filter.category = category;
-    if (Array.isArray(itemIds) && itemIds.length > 0) filter._id = { $in: itemIds };
-
-    const itemsToProcess = await PendingAIResponse.find(filter);
-
-    if (itemsToProcess.length === 0) {
-      return res.status(200).json({ success: true, processedCount: 0, message: "No matching pending items found." });
-    }
-
-    if (action === "approve") {
-      // Build bulk FAQ insertion payload
-      const faqDocs = itemsToProcess.map((item) => ({
-        expertSystemID: item.expertSystemID,
-        question: item.question,
-        normalizedQuestion: item.normalizedQuestion,
-        answer: item.generatedAnswer,
-        embedding: item.questionEmbedding,
-        priority: 1
-      }));
-
-      // Insert directly into FAQs
-      await FAQ.insertMany(faqDocs, { ordered: false });
-
-      // Update statuses in Pending Queue
-      const ids = itemsToProcess.map((i) => i._id);
-      await PendingAIResponse.updateMany({ _id: { $in: ids } }, { status: "approved" }, { runValidators: false });
-    } else {
-      // Action === "reject"
-      const ids = itemsToProcess.map((i) => i._id);
-      await PendingAIResponse.updateMany({ _id: { $in: ids } }, { status: "rejected" }, { runValidators: false });
-    }
-
-    return res.status(200).json({
-      success: true,
-      processedCount: itemsToProcess.length,
-      message: `Successfully executed bulk ${action} on ${itemsToProcess.length} items.`
-    });
-  } catch (error) {
-    console.error("❌ Bulk action failed:", error);
-    return res.status(500).json({ error: "Failed to execute bulk queue operation." });
-  }
-};
-
-
-/**
- * POST /api/pending-ai/:id/approve
- * Approves the generated draft and promotes it to permanent FAQ database memory
+ * Approve a pending item and transfer it to live FAQs
  */
 exports.approveResponse = async (req, res) => {
   try {
     const { id } = req.params;
 
     const pendingItem = await PendingAIResponse.findById(id);
-    if (!pendingItem || pendingItem.status !== "pending") {
-      return res.status(404).json({ error: "Pending document not found or already processed." });
+    if (!pendingItem) {
+      return res.status(404).json({ success: false, message: "Pending response not found" });
     }
 
-    // 🚀 Promote record directly to permanent FAQ storage.
-    // Your faqSchema pre-save hook automatically builds the embedding on creation!
-    await FAQ.create({
+    // Safely extract question & answer from whatever field exists
+    const finalQuestion = pendingItem.question || pendingItem.primaryQuestion;
+    const finalAnswer = pendingItem.answer || pendingItem.primaryResponse || pendingItem.generatedAnswer;
+
+    if (!finalQuestion || !finalAnswer) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Cannot approve item: missing question or answer data on pending record." 
+      });
+    }
+
+    const normQ = pendingItem.normalizedQuestion || normalize(finalQuestion);
+
+    // Create the FAQ with guaranteed fallbacks for both schema formats
+    const newFAQ = await FAQ.create({
       expertSystemID: pendingItem.expertSystemID,
-      question: pendingItem.question,
-      answer: pendingItem.generatedAnswer,
-      priority: 1
+      category: pendingItem.category || "general",
+      intent: pendingItem.intent || normQ,
+      
+      // Traditional FAQ Schema keys
+      question: finalQuestion,
+      answer: finalAnswer,
+
+      // Newer FAQ Schema keys
+      primaryQuestion: finalQuestion,
+      primaryResponse: finalAnswer,
+      normalizedQuestion: normQ,
+      
+      questionEmbedding: pendingItem.questionEmbedding || [],
+      keywords: pendingItem.keywords || [],
+      source: pendingItem.source || "business_profile",
+      metadata: pendingItem.metadata || { autoGenerated: true },
+      isActive: true,
+      isApproved: true
     });
 
-    // 🚀 FIX: Atomically change status to cleared while safely bypassing the schema enum validator restrictions
-    await PendingAIResponse.findByIdAndUpdate(id, { status: "approved" }, { runValidators: false });
+    // Update pending item status
+    pendingItem.status = "approved";
+    if (req.user?._id) pendingItem.reviewedBy = req.user._id;
+    await pendingItem.save();
 
-    console.log(`✨ [AI Control] Approved and synchronized item ID ${id} to permanent FAQ system.`);
-    return res.status(200).json({ success: true, message: "Response successfully trained into FAQ system." });
+    return res.status(200).json({ 
+      success: true, 
+      message: "FAQ approved successfully", 
+      faq: newFAQ 
+    });
   } catch (error) {
-    console.error("❌ Error approving AI response:", error);
-    return res.status(500).json({ error: "Failed to process structural approval routines." });
+    console.error("Error approving response:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
 /**
- * POST /api/pending-ai/:id/edit
- * Accepts human modifications, saves them to FAQ database, and clears from queue
+ * Edit pending item fields and approve it into live FAQs
  */
 exports.editAndApproveResponse = async (req, res) => {
   try {
     const { id } = req.params;
-    const { editedAnswer } = req.body;
-
-    if (!editedAnswer || editedAnswer.trim() === "") {
-      return res.status(400).json({ error: "Edited answer text cannot be submitted empty." });
-    }
+    const { editedQuestion, editedAnswer } = req.body;
 
     const pendingItem = await PendingAIResponse.findById(id);
-    if (!pendingItem || pendingItem.status !== "pending") {
-      return res.status(404).json({ error: "Target review element missing or closed." });
+    if (!pendingItem) {
+      return res.status(404).json({ success: false, message: "Pending item not found" });
     }
 
-    // 🚀 Promote the edited text answer straight to the permanent FAQ storage
-    await FAQ.create({
+    const finalQuestion = editedQuestion?.trim() || pendingItem.primaryQuestion || pendingItem.question;
+    const finalAnswer = editedAnswer?.trim() || pendingItem.primaryResponse || pendingItem.generatedAnswer;
+
+    if (!finalQuestion || !finalAnswer) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Question and answer text cannot be empty." 
+      });
+    }
+
+    const normQ = normalize(finalQuestion);
+
+    // Create entry in FAQ collection (includes required question & answer fields)
+    const createdFAQ = await FAQ.create({
       expertSystemID: pendingItem.expertSystemID,
-      question: pendingItem.question,
-      answer: editedAnswer.trim(),
-      priority: 1
+      category: pendingItem.category || "general",
+      intent: pendingItem.intent || normQ,
+
+      // Traditional FAQ Schema keys
+      question: finalQuestion,
+      answer: finalAnswer,
+
+      // Newer FAQ Schema keys
+      primaryQuestion: finalQuestion,
+      primaryResponse: finalAnswer,
+      normalizedQuestion: normQ,
+      
+      variations: pendingItem.variations || [],
+      keywords: pendingItem.keywords || [],
+      metadata: pendingItem.metadata || { autoGenerated: true },
+      isActive: true,
+      isApproved: true
     });
 
-    // 🚀 FIX: Update both draft copy state and status securely while ignoring schema enum limitations
-    await PendingAIResponse.findByIdAndUpdate(id, { 
-      status: "approved",
-      generatedAnswer: editedAnswer.trim()
-    }, { runValidators: false });
+    // Sync all field variations on the pending record before marking as edited
+    pendingItem.question = finalQuestion;
+    pendingItem.primaryQuestion = finalQuestion;
+    pendingItem.answer = finalAnswer;
+    pendingItem.generatedAnswer = finalAnswer;
+    pendingItem.primaryResponse = finalAnswer;
+    pendingItem.status = "edited";
+    if (req.user?._id) pendingItem.reviewedBy = req.user._id;
+    await pendingItem.save();
 
-    console.log(`✍️ [AI Control] Custom modification verified. Item ${id} written to FAQ storage.`);
-    return res.status(200).json({ success: true, message: "Manually adjusted response trained successfully." });
+    return res.status(200).json({
+      success: true,
+      message: "Edited FAQ approved and published!",
+      faq: createdFAQ
+    });
   } catch (error) {
-    console.error("❌ Error editing AI response fallback:", error);
-    return res.status(500).json({ error: "Failed to parse manual overwrite payload parameters." });
+    console.error("Error editing response:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
 
 /**
- * POST /api/pending-ai/:id/reject
- * Discards unhelpful generation blocks completely
+ * Reject a pending item
  */
 exports.rejectResponse = async (req, res) => {
   try {
@@ -215,16 +171,93 @@ exports.rejectResponse = async (req, res) => {
 
     const pendingItem = await PendingAIResponse.findById(id);
     if (!pendingItem) {
-      return res.status(404).json({ error: "Target pending document instance does not exist." });
+      return res.status(404).json({ success: false, message: "Pending item not found" });
     }
 
-    // 🚀 FIX: Ignore rigid schema validation criteria while rejecting items to keep pipeline fluid
-    await PendingAIResponse.findByIdAndUpdate(id, { status: "rejected" }, { runValidators: false });
+    pendingItem.status = "rejected";
+    if (req.user?._id) pendingItem.reviewedBy = req.user._id;
+    await pendingItem.save();
 
-    console.log(`🗑️ [AI Control] Discarded generation block trace index element ${id}.`);
-    return res.status(200).json({ success: true, message: "Draft rejected and purged from operational loops." });
+    return res.status(200).json({
+      success: true,
+      message: "Item rejected successfully."
+    });
   } catch (error) {
-    console.error("❌ Error discarding AI response document context:", error);
-    return res.status(500).json({ error: "Failed to register discard selection indices flags." });
+    console.error("Error rejecting response:", error);
+    return res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+/**
+ * Handle bulk actions (approve_all, reject_all)
+ */
+exports.bulkAction = async (req, res) => {
+  try {
+    const { action, itemIds } = req.body;
+
+    if (!Array.isArray(itemIds) || itemIds.length === 0) {
+      return res.status(400).json({ success: false, message: "No item IDs provided" });
+    }
+
+    if (action === "reject") {
+      await PendingAIResponse.updateMany(
+        { _id: { $in: itemIds } },
+        { $set: { status: "rejected" } }
+      );
+      return res.status(200).json({ success: true, message: `Rejected ${itemIds.length} items.` });
+    }
+
+    if (action === "approve") {
+      const itemsToApprove = await PendingAIResponse.find({ _id: { $in: itemIds }, status: "pending" });
+
+      const faqsToInsert = [];
+
+      for (const item of itemsToApprove) {
+        const questionText = item.question || item.primaryQuestion;
+        const answerText = item.answer || item.primaryResponse || item.generatedAnswer;
+
+        if (!questionText || !answerText) continue;
+
+        const normQ = item.normalizedQuestion || normalize(questionText);
+
+        faqsToInsert.push({
+          expertSystemID: item.expertSystemID,
+          category: item.category || "general",
+          intent: item.intent || normQ,
+
+          // Traditional FAQ Schema keys
+          question: questionText,
+          answer: answerText,
+
+          // Newer FAQ Schema keys
+          primaryQuestion: questionText,
+          primaryResponse: answerText,
+          normalizedQuestion: normQ,
+
+          questionEmbedding: item.questionEmbedding || [],
+          variations: item.variations || [],
+          keywords: item.keywords || [],
+          metadata: item.metadata || { autoGenerated: true },
+          isActive: true,
+          isApproved: true
+        });
+      }
+
+      if (faqsToInsert.length > 0) {
+        await FAQ.insertMany(faqsToInsert);
+      }
+
+      await PendingAIResponse.updateMany(
+        { _id: { $in: itemIds } },
+        { $set: { status: "approved" } }
+      );
+
+      return res.status(200).json({ success: true, message: `Approved ${faqsToInsert.length} items.` });
+    }
+
+    return res.status(400).json({ success: false, message: "Invalid action specified." });
+  } catch (error) {
+    console.error("Error performing bulk action:", error);
+    return res.status(500).json({ success: false, error: error.message });
   }
 };
