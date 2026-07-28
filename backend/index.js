@@ -15,9 +15,6 @@ const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
   "https://ai-whatsapp-assistant-one.vercel.app",
-  "https://ai-whatsapp-assistant-one.vercel.app",
-  "https://*.vercel.app", // Wildcard for all Vercel preview deployments
-  "https://your-custom-domain.com", // Add your custom domain if you have one
 ];
 
 // 1. Create HTTP server wrapper around Express
