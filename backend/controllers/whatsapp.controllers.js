@@ -71,10 +71,10 @@ async function processSlowResponseInBackground({
 }) {
   try {
     // 1. Execute Pipeline: Exact Text & Semantic Embeddings Tiers (FAQ search)
-    console.log(`🔍 [Async Background] Running Multi-Tier Retrieval Pipeline...`);
+    console.log(`🔍 [Async Background] Running Multi-Tier Retrieval Pipeline for System ID: ${activeSystemID}...`);
     const pipelineResult = await retrieveAnswerPipeline(activeSystemID, messageText);
 
-    if (pipelineResult.found) {
+    if (pipelineResult && pipelineResult.found) {
       console.log(`🎯 [Async Background] Match resolved via verified pipeline tier: [${pipelineResult.source}]`);
       const finalReply = pipelineResult.answer;
 
@@ -94,54 +94,38 @@ async function processSlowResponseInBackground({
       console.log(`✉️ [Async Background] Verified pipeline answer delivered via Twilio REST SDK.`);
       
     } else {
-      // 2. Hard LLM Fallback (Local Ollama Engine Execution with Business Context)
-      console.log(`🦙 [Async Background] Pipeline missed. Generating Context-Aware prompt context via Ollama...`);
-      console.log("Can't process the query, we cant access ollama right now"); 
+      // 2. Fallback execution when DB/Ollama is bypassed
+      console.log(`⚠️ [Async Background] Pipeline missed. Ollama is not in use.`);
+
+      const fallbackReply = "Thank you for reaching out! We received your query, but our automated assistant is currently offline. A representative will get back to you shortly.";
+
+      // Save bot interaction history
+      conversation.messages.push({ 
+        sender: "bot", 
+        text: fallbackReply,
+        timestamp: new Date()
+      });
+      await conversation.save();
+
+      // Dispatch fallback response back to Twilio handset
+      await twilioClient.messages.create({
+        from: rawTo,   
+        to: rawFrom,   
+        body: fallbackReply
+      });
+      console.log(`✉️ [Async Background] Bypassed Ollama fallback response sent to user via Twilio.`);
+
+      /* 
+      // OLLAMA LLM FALLBACK (DISABLED)
       // const normalizedQuery = normalize(messageText);
       // const queryVector = pipelineResult.queryVector || await aiService.getEmbedding(normalizedQuery);
-      
       // const infusedContextPrompt = await buildContextPrompt(activeSystemID, normalizedQuery, queryVector);
       // const rawLlamaReply = await aiService.generateChatFallback(messageText, infusedContextPrompt);
-
-      // let finalizedResponse = rawLlamaReply
-      //   .replace(/<\/?[^>]+(>|$)/g, "")
-      //   .replace(/[<>]/g, "")
-      //   .replace(/```/g, "")
-      //   .replace(/&/g, "and")  
-      //   .replace(/"/g, "'");
-
-      // // Save bot interaction to local message track history
-      // conversation.messages.push({ 
-      //   sender: "bot", 
-      //   text: finalizedResponse,
-      //   timestamp: new Date()
-      // });
-      // await conversation.save();
-
-      // // **FIX**: Dispatch Ollama response IMMEDIATELY to the user handset
-      // await twilioClient.messages.create({
-      //   from: rawTo,   
-      //   to: rawFrom,   
-      //   body: finalizedResponse
-      // });
-      // console.log(`✉️ [Async Background] Ollama fallback answer sent directly to user.`);
-
-      // // 3. Log to PendingAIResponses queue for later Admin Dashboard management
-      // console.log(`📥 [Human Review Loop] Storing copy to PendingAIResponses queue for Admin management...`);
-      // await PendingAIResponse.create({
-      //   expertSystemID: activeSystemID,
-      //   question: messageText,
-      //   normalizedQuestion: normalizedQuery,
-      //   questionEmbedding: queryVector,
-      //   generatedAnswer: finalizedResponse,
-      //   confidence: 0.70, 
-      //   status: "pending" // Admin reads from here in AIcontrol.jsx
-      // });
-
-      //console.log(`✅ [Human Review Loop] Record logged to dashboard queue successfully.`);
+      // ...
+      */
     }
 
-    // 4. Evaluate Lead Intent profiling triggers safely in background thread context
+    // 3. Evaluate Lead Intent profiling triggers safely in background thread context
     const isTerminalState = ["Converted", "Spam"].includes(customer.intent);
     const isLowSignal = isLowSignalMessage(messageText);
     const messagesSinceLastCheck = customer.totalMessages - customer.lastAnalysisCount;
@@ -251,6 +235,10 @@ async function incomingMsgs(req, res) {
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
 
     processSlowResponseInBackground({
+      console.log("DB Search Param ->", { 
+  activeSystemID: activeSystemID.toString(), 
+  messageText 
+});
       messageText,
       activeSystemID,
       rawFrom,
