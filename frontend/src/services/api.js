@@ -2,7 +2,7 @@ import axios from "axios";
 import { auth } from "../firebase/config"; // Import your firebase auth instance
 
 const API = axios.create({
-  baseURL: "http://localhost:3000/",
+  baseURL: "http://localhost:5000/",
   withCredentials: true,
 });
 

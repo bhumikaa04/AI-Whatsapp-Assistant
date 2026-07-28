@@ -94,7 +94,7 @@ app.use("/pending-ai", require("./routes/pendingAI.routes"));
 app.use("/business-profile", require("./routes/BusinessProfile.routes")); 
 
 // 4. Listen on HTTP Server (which handles both REST endpoints & WebSockets)
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 server.listen(PORT, () =>
   console.log(`🚀 Server running on http://localhost:${PORT}`)
 );
