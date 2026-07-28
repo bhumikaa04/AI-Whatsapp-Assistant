@@ -96,49 +96,49 @@ async function processSlowResponseInBackground({
     } else {
       // 2. Hard LLM Fallback (Local Ollama Engine Execution with Business Context)
       console.log(`🦙 [Async Background] Pipeline missed. Generating Context-Aware prompt context via Ollama...`);
+      console.log("Can't process the query, we cant access ollama right now"); 
+      // const normalizedQuery = normalize(messageText);
+      // const queryVector = pipelineResult.queryVector || await aiService.getEmbedding(normalizedQuery);
       
-      const normalizedQuery = normalize(messageText);
-      const queryVector = pipelineResult.queryVector || await aiService.getEmbedding(normalizedQuery);
-      
-      const infusedContextPrompt = await buildContextPrompt(activeSystemID, normalizedQuery, queryVector);
-      const rawLlamaReply = await aiService.generateChatFallback(messageText, infusedContextPrompt);
+      // const infusedContextPrompt = await buildContextPrompt(activeSystemID, normalizedQuery, queryVector);
+      // const rawLlamaReply = await aiService.generateChatFallback(messageText, infusedContextPrompt);
 
-      let finalizedResponse = rawLlamaReply
-        .replace(/<\/?[^>]+(>|$)/g, "")
-        .replace(/[<>]/g, "")
-        .replace(/```/g, "")
-        .replace(/&/g, "and")  
-        .replace(/"/g, "'");
+      // let finalizedResponse = rawLlamaReply
+      //   .replace(/<\/?[^>]+(>|$)/g, "")
+      //   .replace(/[<>]/g, "")
+      //   .replace(/```/g, "")
+      //   .replace(/&/g, "and")  
+      //   .replace(/"/g, "'");
 
-      // Save bot interaction to local message track history
-      conversation.messages.push({ 
-        sender: "bot", 
-        text: finalizedResponse,
-        timestamp: new Date()
-      });
-      await conversation.save();
+      // // Save bot interaction to local message track history
+      // conversation.messages.push({ 
+      //   sender: "bot", 
+      //   text: finalizedResponse,
+      //   timestamp: new Date()
+      // });
+      // await conversation.save();
 
-      // **FIX**: Dispatch Ollama response IMMEDIATELY to the user handset
-      await twilioClient.messages.create({
-        from: rawTo,   
-        to: rawFrom,   
-        body: finalizedResponse
-      });
-      console.log(`✉️ [Async Background] Ollama fallback answer sent directly to user.`);
+      // // **FIX**: Dispatch Ollama response IMMEDIATELY to the user handset
+      // await twilioClient.messages.create({
+      //   from: rawTo,   
+      //   to: rawFrom,   
+      //   body: finalizedResponse
+      // });
+      // console.log(`✉️ [Async Background] Ollama fallback answer sent directly to user.`);
 
-      // 3. Log to PendingAIResponses queue for later Admin Dashboard management
-      console.log(`📥 [Human Review Loop] Storing copy to PendingAIResponses queue for Admin management...`);
-      await PendingAIResponse.create({
-        expertSystemID: activeSystemID,
-        question: messageText,
-        normalizedQuestion: normalizedQuery,
-        questionEmbedding: queryVector,
-        generatedAnswer: finalizedResponse,
-        confidence: 0.70, 
-        status: "pending" // Admin reads from here in AIcontrol.jsx
-      });
+      // // 3. Log to PendingAIResponses queue for later Admin Dashboard management
+      // console.log(`📥 [Human Review Loop] Storing copy to PendingAIResponses queue for Admin management...`);
+      // await PendingAIResponse.create({
+      //   expertSystemID: activeSystemID,
+      //   question: messageText,
+      //   normalizedQuestion: normalizedQuery,
+      //   questionEmbedding: queryVector,
+      //   generatedAnswer: finalizedResponse,
+      //   confidence: 0.70, 
+      //   status: "pending" // Admin reads from here in AIcontrol.jsx
+      // });
 
-      console.log(`✅ [Human Review Loop] Record logged to dashboard queue successfully.`);
+      //console.log(`✅ [Human Review Loop] Record logged to dashboard queue successfully.`);
     }
 
     // 4. Evaluate Lead Intent profiling triggers safely in background thread context
