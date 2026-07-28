@@ -2,45 +2,59 @@
 const admin = require('firebase-admin');
 require("dotenv").config();
 
-// Method 1: Load from complete JSON string (RECOMMENDED)
 try {
-  // Check if we have the complete JSON
   if (process.env.FIREBASE_SERVICE_ACCOUNT) {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    
-    // Validate required fields
-    if (!serviceAccount.project_id) {
-      throw new Error('Missing project_id in Firebase credentials');
+    let rawServiceAccount = process.env.FIREBASE_SERVICE_ACCOUNT.trim();
+
+    // Fix potential outer quote wrapping
+    if (rawServiceAccount.startsWith("'") && rawServiceAccount.endsWith("'")) {
+      rawServiceAccount = rawServiceAccount.slice(1, -1);
     }
-    
-    // Initialize with full service account
+
+    const serviceAccount = JSON.parse(rawServiceAccount);
+
+    // Ensure raw \n in private key string gets translated to actual newlines
+    if (serviceAccount.private_key) {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
+
+    if (!serviceAccount.project_id) {
+      throw new Error('Missing project_id inside FIREBASE_SERVICE_ACCOUNT JSON.');
+    }
+
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert(serviceAccount),
       });
-      console.log('✅ Firebase initialized successfully (from complete JSON)');
+      console.log('✅ Firebase initialized successfully (from FIREBASE_SERVICE_ACCOUNT)');
     }
   } else {
-    // Fallback to individual environment variables
-    console.log('⚠️ Using individual Firebase environment variables');
-    
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY 
-      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
-      : undefined;
-    
-    if (!privateKey || !process.env.FIREBASE_PROJECT_ID || !process.env.FIREBASE_CLIENT_EMAIL) {
-      throw new Error('Missing required Firebase environment variables');
+    console.log('⚠️ FIREBASE_SERVICE_ACCOUNT not found, checking individual variables...');
+
+    const rawKey = process.env.FIREBASE_PRIVATE_KEY;
+    const projectId = process.env.FIREBASE_PROJECT_ID;
+    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+
+    if (!rawKey || !projectId || !clientEmail) {
+      console.error('Missing status:', {
+        FIREBASE_PROJECT_ID: !!projectId,
+        FIREBASE_CLIENT_EMAIL: !!clientEmail,
+        FIREBASE_PRIVATE_KEY: !!rawKey,
+      });
+      throw new Error('Missing required Firebase environment variables.');
     }
-    
+
+    const privateKey = rawKey.replace(/\\n/g, '\n');
+
     if (!admin.apps.length) {
       admin.initializeApp({
         credential: admin.credential.cert({
-          projectId: process.env.FIREBASE_PROJECT_ID,
-          clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+          projectId: projectId,
+          clientEmail: clientEmail,
           privateKey: privateKey,
         }),
       });
-      console.log('✅ Firebase initialized successfully (from individual vars)');
+      console.log('✅ Firebase initialized successfully (from individual variables)');
     }
   }
 } catch (error) {
