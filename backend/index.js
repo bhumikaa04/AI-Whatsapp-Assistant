@@ -67,7 +67,7 @@ app.use(
 );
 
 // Pre-flight requests
-app.options('*', cors());
+app.options('/*', cors());
 
 async function startServer() {
   try {
