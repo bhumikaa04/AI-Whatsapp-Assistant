@@ -70,6 +70,12 @@ async function processSlowResponseInBackground({
   customer
 }) {
   try {
+    // Debug log to inspect active routing parameters
+    console.log("DB Search Param ->", { 
+      activeSystemID: activeSystemID.toString(), 
+      messageText 
+    });
+
     // 1. Execute Pipeline: Exact Text & Semantic Embeddings Tiers (FAQ search)
     console.log(`🔍 [Async Background] Running Multi-Tier Retrieval Pipeline for System ID: ${activeSystemID}...`);
     const pipelineResult = await retrieveAnswerPipeline(activeSystemID, messageText);
@@ -114,15 +120,6 @@ async function processSlowResponseInBackground({
         body: fallbackReply
       });
       console.log(`✉️ [Async Background] Bypassed Ollama fallback response sent to user via Twilio.`);
-
-      /* 
-      // OLLAMA LLM FALLBACK (DISABLED)
-      // const normalizedQuery = normalize(messageText);
-      // const queryVector = pipelineResult.queryVector || await aiService.getEmbedding(normalizedQuery);
-      // const infusedContextPrompt = await buildContextPrompt(activeSystemID, normalizedQuery, queryVector);
-      // const rawLlamaReply = await aiService.generateChatFallback(messageText, infusedContextPrompt);
-      // ...
-      */
     }
 
     // 3. Evaluate Lead Intent profiling triggers safely in background thread context
@@ -235,10 +232,6 @@ async function incomingMsgs(req, res) {
     res.send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
 
     processSlowResponseInBackground({
-      console.log("DB Search Param ->", { 
-  activeSystemID: activeSystemID.toString(), 
-  messageText 
-});
       messageText,
       activeSystemID,
       rawFrom,
