@@ -34,7 +34,7 @@ export function AuthProvider({ children }) {
       
       // Call sync endpoint
       const res = await axios.post(
-        "/auth/sync",
+        "/auth/sync-user",
         {},
         {
           headers: {
