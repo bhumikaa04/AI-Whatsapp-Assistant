@@ -66,9 +66,6 @@ app.use(
   })
 );
 
-// Pre-flight requests
-app.options('/*', cors());
-
 async function startServer() {
   try {
     console.log("Connecting to MongoDB...");
