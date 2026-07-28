@@ -10,19 +10,30 @@ const whatsappController = require("./controllers/whatsapp.controllers");
 
 const app = express();
 
+// ✅ Updated CORS configuration for both Express and Socket.io
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  "https://ai-whatsapp-assistant-one.vercel.app",
+  "https://ai-whatsapp-assistant-one.vercel.app",
+  "https://*.vercel.app", // Wildcard for all Vercel preview deployments
+  "https://your-custom-domain.com", // Add your custom domain if you have one
+];
+
 // 1. Create HTTP server wrapper around Express
 const server = http.createServer(app);
 
-// 2. Initialize Socket.io with CORS settings
+// 2. Initialize Socket.io with updated CORS settings
 const io = new Server(server, {
   cors: {
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: allowedOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"]
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   }
 });
 
-// 3. Make 'io' instance globally accessible across controllers via req.app.get("io")
+// 3. Make 'io' instance globally accessible
 app.set("io", io);
 
 // Socket.io Connection Event Listener
@@ -37,23 +48,35 @@ io.on("connection", (socket) => {
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// ✅ Updated CORS middleware for Express
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"],
+    origin: function (origin, callback) {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+      
+      // Check if origin is allowed
+      if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+        callback(null, true);
+      } else {
+        console.log('❌ CORS blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true, 
-    methods: ["GET", "POST" , "PUT", "PATCH", "DELETE"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
+// Pre-flight requests
+app.options('*', cors());
+
 async function startServer() {
   try {
     console.log("Connecting to MongoDB...");
-
     await mongoose.connect(process.env.MONGO_URI);
-
     console.log("✅ MongoDB connected"); 
-
   } catch (err) {
     console.error("❌ MongoDB connection failed:", err);
     process.exit(1);
@@ -66,11 +89,20 @@ app.get("/", (req, res) => {
   res.send("Replyly Server Running");
 });
 
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Logging middleware
 console.log("server file running");
 
 app.use((req, res, next) => {
   console.log("➡️ Incoming:", req.method, req.url);
+  console.log("📡 Origin:", req.headers.origin);
   next();
 });
 
@@ -93,7 +125,7 @@ app.use("/auth", require("./routes/auth.routes"));
 app.use("/pending-ai", require("./routes/pendingAI.routes"));
 app.use("/business-profile", require("./routes/BusinessProfile.routes")); 
 
-// 4. Listen on HTTP Server (which handles both REST endpoints & WebSockets)
+// 4. Listen on HTTP Server
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () =>
   console.log(`🚀 Server running on http://localhost:${PORT}`)
