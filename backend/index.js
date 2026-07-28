@@ -63,7 +63,7 @@ async function startServer() {
 startServer();
 
 app.get("/", (req, res) => {
-  res.send("Gemini API Server Running");
+  res.send("Replyly Server Running");
 });
 
 // Logging middleware
