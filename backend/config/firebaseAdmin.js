@@ -1,18 +1,16 @@
-const admin = require("firebase-admin");
-const path = require("path");
+const admin = require('firebase-admin');
+require("dotenv").config();
 
-// Resolve the path to the JSON file outside the current directory
-const serviceAccount = require(path.resolve(__dirname, "../credentials.json"));
+const privateKey = process.env.FIREBASE_PRIVATE_KEY 
+  ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n') 
+  : undefined;
 
-if (!admin.apps.length) {
-  try {
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
-    console.log("✅ Firebase Admin initialized successfully using JSON file");
-  } catch (error) {
-    console.error("❌ Firebase Admin initialization failed:", error.message);
-  }
-}
+admin.initializeApp({
+  credential: admin.credential.cert({
+    projectId: process.env.FIREBASE_PROJECT_ID,
+    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+    privateKey: privateKey,
+  }),
+});
 
 module.exports = admin;

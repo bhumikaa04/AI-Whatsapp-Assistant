@@ -118,7 +118,7 @@ cp .env.example .env
 ### 3. Environment Variables (`backend/.env`)
 
 ```env
-PORT=5000
+PORT=3000
 MONGODB_URI=your_mongodb_connection_string
 TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
