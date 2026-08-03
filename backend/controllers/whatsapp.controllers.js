@@ -128,7 +128,13 @@ try {
         to: rawFrom,
         body: fallbackReply
     });
+    const fetched = await twilioClient.messages(result.sid).fetch();
 
+console.log("Fetched SID:", fetched.sid);
+console.log("Fetched Status:", fetched.status);
+console.log("Fetched Account:", fetched.accountSid);
+console.log("Fetched Error Code:", fetched.errorCode);
+console.log("Fetched Error Message:", fetched.errorMessage);
     console.log("SUCCESS");
     console.log(result);
 
