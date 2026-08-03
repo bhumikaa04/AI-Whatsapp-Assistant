@@ -124,10 +124,13 @@ try {
     });
 
     const result = await twilioClient.messages.create({
-        from: rawTo,
+        from: "whatsapp:+14155238886",
         to: rawFrom,
         body: fallbackReply
     });
+
+    await new Promise(resolve => setTimeout(resolve, 5000));
+
     const fetched = await twilioClient.messages(result.sid).fetch();
 
 console.log("Fetched SID:", fetched.sid);
