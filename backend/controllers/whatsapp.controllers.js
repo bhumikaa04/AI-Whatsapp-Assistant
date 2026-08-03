@@ -114,12 +114,35 @@ async function processSlowResponseInBackground({
       await conversation.save();
 
       // Dispatch fallback response back to Twilio handset
-      await twilioClient.messages.create({
-        from: rawTo,   
-        to: rawFrom,   
+try {
+
+    console.log("Attempting outbound message...");
+    console.log({
+        from: rawTo,
+        to: rawFrom,
         body: fallbackReply
-      });
-      console.log(`✉️ [Async Background] Bypassed Ollama fallback response sent to user via Twilio.`);
+    });
+
+    const result = await twilioClient.messages.create({
+        from: rawTo,
+        to: rawFrom,
+        body: fallbackReply
+    });
+
+    console.log("SUCCESS");
+    console.log(result);
+
+}
+catch(err){
+
+    console.error("TWILIO SEND FAILED");
+
+    console.error(err);
+
+    console.error("Code:", err.code);
+    console.error("Status:", err.status);
+    console.error("Message:", err.message);
+}
     }
 
     // 3. Evaluate Lead Intent profiling triggers safely in background thread context
