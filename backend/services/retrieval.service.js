@@ -212,9 +212,12 @@ function extractDocData(doc) {
   const answer = doc.primaryResponse || doc.answer || doc.generatedAnswer || "";
   const normQ = (doc.normalizedQuestion || normalize(question)).toLowerCase().trim();
   const vector = doc.questionEmbedding || doc.embedding || [];
-  
+
+  // Safely normalize keywords into clean lowercase strings
   const rawKeywords = doc.keywords || [];
-  const keywords = rawKeywords.map(k => normalize(k).toLowerCase().trim()).filter(Boolean);
+  const keywords = rawKeywords
+    .map(k => normalize(k).toLowerCase().trim())
+    .filter(Boolean);
 
   return { question, answer, normQ, vector, keywords };
 }
@@ -224,7 +227,7 @@ function extractDocData(doc) {
  */
 async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   const normalizedQuery = normalize(rawCustomerMessage).toLowerCase().trim();
-  
+
   if (!normalizedQuery) {
     return { found: false, answer: null, source: null };
   }
@@ -235,8 +238,11 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   console.log(`🔍 [Pipeline Debug] Searching FAQs for System ID: ${expertSystemID}`);
   console.log(`📊 [Pipeline Debug] Found ${allFAQs.length} FAQs & ${allKnowledge.length} AIKnowledge entries in DB`);
 
+  // Parse query into discrete word tokens for exact keyword set matching
+  const queryTokens = new Set(normalizedQuery.split(/\s+/).filter(w => w.length > 2));
+
   // =========================================================================
-  // TIER 1: Exact Match, Bidirectional Substring & Keyword Search
+  // TIER 1: Exact Match, Bidirectional Substring & High-Priority Keywords
   // =========================================================================
   for (const faq of allFAQs) {
     const { answer, normQ, keywords } = extractDocData(faq);
@@ -257,12 +263,14 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       return { found: true, answer, source: "substring_faq_match" };
     }
 
-    // 3. Direct Keyword Intersection Match
-    const queryTokens = new Set(normalizedQuery.split(/\s+/));
-    const hasKeywordMatch = keywords.some(kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw)));
+    // 3. 🚀 Direct Keyword Intersection Search (Priority 1)
+    const hasDirectKeyword = keywords.some(
+      kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw))
+    );
 
-    if (hasKeywordMatch && keywords.length > 0) {
-      console.log(`🎯 [Pipeline] Tier 1 Keyword Match on FAQ: "${normQ}"`);
+    // If query contains a unique keyword from this FAQ, accept immediately
+    if (hasDirectKeyword && keywords.length > 0) {
+      console.log(`🎯 [Pipeline] Tier 1 Keyword Priority Match on FAQ: "${normQ}" (Matched Keywords: ${keywords.join(", ")})`);
       return { found: true, answer, source: "keyword_faq_match" };
     }
   }
@@ -284,17 +292,18 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       return { found: true, answer, source: "substring_aiknowledge_match" };
     }
 
-    const queryTokens = new Set(normalizedQuery.split(/\s+/));
-    const hasKeywordMatch = keywords.some(kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw)));
+    const hasDirectKeyword = keywords.some(
+      kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw))
+    );
 
-    if (hasKeywordMatch && keywords.length > 0) {
-      console.log(`🎯 [Pipeline] Tier 1 Keyword Match on AIKnowledge: "${normQ}"`);
+    if (hasDirectKeyword && keywords.length > 0) {
+      console.log(`🎯 [Pipeline] Tier 1 Keyword Priority Match on AIKnowledge: "${normQ}"`);
       return { found: true, answer, source: "keyword_aiknowledge_match" };
     }
   }
 
   // =========================================================================
-  // TIER 2: Semantic Vector Search with Keyword Boosting
+  // TIER 2: Semantic Vector Search with Keyword Boost Weighting
   // =========================================================================
   let queryVector = [];
   try {
@@ -309,8 +318,8 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   }
 
   const wordCount = normalizedQuery.split(/\s+/).length;
-  // Adjusted thresholds for lightweight sentence transformers (all-MiniLM-L6-v2)
-  const EFFECTIVE_THRESHOLD = wordCount <= 3 ? 0.45 : 0.55; 
+  // Adjusted baseline threshold for lightweight models (all-MiniLM-L6-v2)
+  const EFFECTIVE_THRESHOLD = wordCount <= 3 ? 0.45 : 0.55;
 
   // --- Evaluate FAQ Vector Space ---
   let bestFAQMatch = null;
@@ -321,19 +330,28 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
 
     if (vector && vector.length > 0 && answer) {
       let score = cosineSimilarity(queryVector, vector);
-      
-      // Question word overlap bonus
+      let appliedBoosts = [];
+
+      // 1. General word overlap bonus
       if (hasWordOverlap(normalizedQuery, normQ)) {
-        score += 0.08; 
+        score += 0.08;
+        appliedBoosts.push("word_overlap (+0.08)");
       }
 
-      // Explicit Keyword array bonus
-      const matchedKeyword = keywords.find(kw => normalizedQuery.includes(kw));
+      // 2. 🚀 Explicit Keyword Weighting Priority Boost
+      const matchedKeyword = keywords.find(
+        kw => queryTokens.has(kw) || normalizedQuery.includes(kw)
+      );
       if (matchedKeyword) {
-        score += 0.12;
+        score += 0.15; // Gives significant priority boost to keyword hits
+        appliedBoosts.push(`keyword "${matchedKeyword}" (+0.15)`);
       }
 
-      console.log(`  📐 [Vector Eval] Q: "${question.substring(0, 30)}..." | Score: ${score.toFixed(3)}`);
+      console.log(
+        `  📐 [Vector Eval] Q: "${question.substring(0, 30)}..." | Score: ${score.toFixed(3)} ${
+          appliedBoosts.length ? `[Boosts: ${appliedBoosts.join(", ")}]` : ""
+        }`
+      );
 
       if (score > highestFAQScore) {
         highestFAQScore = score;
@@ -345,7 +363,9 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   }
 
   if (highestFAQScore >= EFFECTIVE_THRESHOLD && bestFAQMatch) {
-    console.log(`🎯 [Pipeline] FAQ Vector Match! Score: ${highestFAQScore.toFixed(3)} (Threshold: ${EFFECTIVE_THRESHOLD}) | Q: "${bestFAQMatch.question}"`);
+    console.log(
+      `🎯 [Pipeline] FAQ Vector Match! Score: ${highestFAQScore.toFixed(3)} (Threshold: ${EFFECTIVE_THRESHOLD}) | Q: "${bestFAQMatch.question}"`
+    );
     return {
       found: true,
       answer: bestFAQMatch.answer,
@@ -362,14 +382,16 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
 
     if (vector && vector.length > 0 && answer) {
       let score = cosineSimilarity(queryVector, vector);
-      
+
       if (hasWordOverlap(normalizedQuery, normQ)) {
         score += 0.08;
       }
 
-      const matchedKeyword = keywords.find(kw => normalizedQuery.includes(kw));
+      const matchedKeyword = keywords.find(
+        kw => queryTokens.has(kw) || normalizedQuery.includes(kw)
+      );
       if (matchedKeyword) {
-        score += 0.12;
+        score += 0.15;
       }
 
       if (score > highestKnowledgeScore) {
@@ -380,7 +402,9 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   }
 
   if (highestKnowledgeScore >= EFFECTIVE_THRESHOLD && bestKnowledgeMatch) {
-    console.log(`🎯 [Pipeline] AIKnowledge Vector Match! Score: ${highestKnowledgeScore.toFixed(3)} (Threshold: ${EFFECTIVE_THRESHOLD})`);
+    console.log(
+      `🎯 [Pipeline] AIKnowledge Vector Match! Score: ${highestKnowledgeScore.toFixed(3)} (Threshold: ${EFFECTIVE_THRESHOLD})`
+    );
 
     await AIKnowledge.updateOne(
       { _id: bestKnowledgeMatch._id },
