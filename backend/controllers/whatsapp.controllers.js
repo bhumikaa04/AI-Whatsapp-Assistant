@@ -431,7 +431,7 @@ async function processSlowResponseInBackground({
       // IMPORTANT: The FROM number must be your registered WhatsApp Business number
       // For sandbox testing, use the sandbox number: whatsapp:+14155238886
       // For production, use your registered number
-      const fromNumber = rawTo || `whatsapp:${BUSINESS_WHATSAPP_NUMBER}`;
+      const fromNumber = rawTo || `whatsapp:${TWILIO_SANDBOX_NUMBER}`;
       
       await sendOutboundMessage(rawFrom, fromNumber, finalReply);
       console.log(`✉️ [Async Background] Verified pipeline answer delivered via Twilio REST SDK.`);
