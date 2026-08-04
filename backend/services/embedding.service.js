@@ -1,8 +1,23 @@
 // server/services/embedding.service.js
-const axios = require("axios");
+const { pipeline } = require("@xenova/transformers");
+
+let extractor = null;
 
 /**
- * Generates a vector embedding array for a given text string.
+ * Initializes the feature extraction pipeline lazily to conserve memory.
+ */
+async function getExtractor() {
+  if (!extractor) {
+    console.log("⚙️ Loading local embedding model (all-MiniLM-L6-v2)...");
+    // Downloads model weights (~25MB) on first start, then caches locally
+    extractor = await pipeline("feature-extraction", "Xenova/all-MiniLM-L6-v2");
+    console.log("✅ Local embedding model ready.");
+  }
+  return extractor;
+}
+
+/**
+ * Generates a vector embedding array for a given text string locally.
  * @param {string} text 
  * @returns {Promise<number[]>}
  */
@@ -12,21 +27,15 @@ async function generateEmbedding(text) {
   }
 
   try {
-    // Target your local Ollama instance or your chosen provider
-    // Using 'nomic-embed-text' or 'all-minilm' as standard light examples
-    const response = await axios.post("http://localhost:11434/api/embeddings", {
-      model: "nomic-embed-text", 
-      prompt: text
-    });
-
-    return response.data.embedding; // Expects an array of floats
+    const generate = await getExtractor();
+    const output = await generate(text, { pooling: "mean", normalize: true });
+    
+    // Convert Tensor output to standard JavaScript Array
+    return Array.from(output.data);
   } catch (error) {
-    console.error("Error generating embedding vector:", error.message);
-    // Return empty array fallback or throw depending on how strict you want your app to be
+    console.error("❌ Error generating local embedding vector:", error.message);
     return [];
   }
 }
 
-module.exports = {
-  generateEmbedding
-};
+module.exports = { generateEmbedding };
