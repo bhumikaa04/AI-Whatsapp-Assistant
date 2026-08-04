@@ -411,7 +411,7 @@ async function processSlowResponseInBackground({
       await conversation.save();
 
       // CRITICAL FIX: Send FROM business TO customer
-      const fromNumber = businessPhone || TWILIO_SANDBOX_NUMBER;
+      const fromNumber = TWILIO_SANDBOX_NUMBER;
       const toNumber = customerPhone;
       
       await sendOutboundMessage(toNumber, fromNumber, finalReply);
@@ -431,7 +431,7 @@ async function processSlowResponseInBackground({
 
       // CRITICAL FIX: Send FROM business TO customer
       try {
-        const fromNumber = businessPhone || TWILIO_SANDBOX_NUMBER;
+        const fromNumber = TWILIO_SANDBOX_NUMBER;
         const toNumber = customerPhone;
         
         console.log(`📤 Attempting outbound fallback message...`);
