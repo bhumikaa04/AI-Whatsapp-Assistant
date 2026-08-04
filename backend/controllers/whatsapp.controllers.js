@@ -300,7 +300,7 @@ const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_A
 
 // Your actual business WhatsApp number (must be registered with Twilio)
 // You need to register this number with Twilio for WhatsApp Business API
-const BUSINESS_WHATSAPP_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+918750685404";
+const BUSINESS_WHATSAPP_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+919871265404";
 const TWILIO_SANDBOX_NUMBER = "+14155238886";
 
 /**
@@ -551,7 +551,7 @@ async function incomingMsgs(req, res) {
     if (cleanBusinessPhone === TWILIO_SANDBOX_NUMBER || cleanBusinessPhone === "14155238886") {
       // This is the sandbox number - find the user by their actual business number
       // In production, you should have a proper mapping
-      const YOUR_REAL_BUSINESS_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+918750685404";
+      const YOUR_REAL_BUSINESS_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+919871265404";
       user = await User.findOne({ phoneNumber: YOUR_REAL_BUSINESS_NUMBER });
       
       if (!user) {
