@@ -188,6 +188,7 @@
 // module.exports = { retrieveAnswerPipeline };
 
 // server/services/retrieval.service.js
+// server/services/retrieval.service.js
 const FAQ = require("../models/FAQ");
 const AIKnowledge = require("../models/AIKnowledge");
 const { normalize } = require("../utils/normalize");
@@ -198,21 +199,24 @@ const { cosineSimilarity } = require("../utils/cosineSimilarity");
  * Calculates word intersection between two strings
  */
 function hasWordOverlap(q1, q2) {
-  const words1 = q1.split(" ").filter(w => w.length > 2);
-  const words2 = q2.split(" ").filter(w => w.length > 2);
+  const words1 = q1.split(/\s+/).filter(w => w.length > 2);
+  const words2 = q2.split(/\s+/).filter(w => w.length > 2);
   return words1.some(w => words2.includes(w));
 }
 
 /**
- * Safely extracts text and vector embedding regardless of schema variation
+ * Safely extracts text, keywords, and vector embedding regardless of schema variation
  */
 function extractDocData(doc) {
   const question = doc.primaryQuestion || doc.question || "";
   const answer = doc.primaryResponse || doc.answer || doc.generatedAnswer || "";
   const normQ = (doc.normalizedQuestion || normalize(question)).toLowerCase().trim();
   const vector = doc.questionEmbedding || doc.embedding || [];
+  
+  const rawKeywords = doc.keywords || [];
+  const keywords = rawKeywords.map(k => normalize(k).toLowerCase().trim()).filter(Boolean);
 
-  return { question, answer, normQ, vector };
+  return { question, answer, normQ, vector, keywords };
 }
 
 /**
@@ -232,10 +236,10 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   console.log(`📊 [Pipeline Debug] Found ${allFAQs.length} FAQs & ${allKnowledge.length} AIKnowledge entries in DB`);
 
   // =========================================================================
-  // TIER 1: Exact Match, Bidirectional Substring & High-Token Overlap
+  // TIER 1: Exact Match, Bidirectional Substring & Keyword Search
   // =========================================================================
   for (const faq of allFAQs) {
-    const { answer, normQ } = extractDocData(faq);
+    const { answer, normQ, keywords } = extractDocData(faq);
     if (!normQ || !answer) continue;
 
     // 1. Exact match
@@ -244,7 +248,7 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       return { found: true, answer, source: "exact_faq_match" };
     }
 
-    // 2. Bidirectional Substring Match (e.g., "product catalog" inside "what is your product catalog?")
+    // 2. Bidirectional Substring Match
     if (
       (normQ.length >= 4 && normalizedQuery.includes(normQ)) ||
       (normalizedQuery.length >= 4 && normQ.includes(normalizedQuery))
@@ -252,10 +256,19 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       console.log(`🎯 [Pipeline] Tier 1 Substring Match on FAQ: "${normQ}"`);
       return { found: true, answer, source: "substring_faq_match" };
     }
+
+    // 3. Direct Keyword Intersection Match
+    const queryTokens = new Set(normalizedQuery.split(/\s+/));
+    const hasKeywordMatch = keywords.some(kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw)));
+
+    if (hasKeywordMatch && keywords.length > 0) {
+      console.log(`🎯 [Pipeline] Tier 1 Keyword Match on FAQ: "${normQ}"`);
+      return { found: true, answer, source: "keyword_faq_match" };
+    }
   }
 
   for (const entry of allKnowledge) {
-    const { answer, normQ } = extractDocData(entry);
+    const { answer, normQ, keywords } = extractDocData(entry);
     if (!normQ || !answer) continue;
 
     if (normQ === normalizedQuery) {
@@ -270,10 +283,18 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       console.log(`🎯 [Pipeline] Tier 1 Substring Match on AIKnowledge: "${normQ}"`);
       return { found: true, answer, source: "substring_aiknowledge_match" };
     }
+
+    const queryTokens = new Set(normalizedQuery.split(/\s+/));
+    const hasKeywordMatch = keywords.some(kw => queryTokens.has(kw) || (kw.length >= 3 && normalizedQuery.includes(kw)));
+
+    if (hasKeywordMatch && keywords.length > 0) {
+      console.log(`🎯 [Pipeline] Tier 1 Keyword Match on AIKnowledge: "${normQ}"`);
+      return { found: true, answer, source: "keyword_aiknowledge_match" };
+    }
   }
 
   // =========================================================================
-  // TIER 2: Semantic Vector Search
+  // TIER 2: Semantic Vector Search with Keyword Boosting
   // =========================================================================
   let queryVector = [];
   try {
@@ -287,21 +308,29 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
     return { found: false, answer: null, source: null };
   }
 
-  const wordCount = normalizedQuery.split(" ").length;
-  const EFFECTIVE_THRESHOLD = wordCount <= 2 ? 0.55 : 0.62; 
+  const wordCount = normalizedQuery.split(/\s+/).length;
+  // Adjusted thresholds for lightweight sentence transformers (all-MiniLM-L6-v2)
+  const EFFECTIVE_THRESHOLD = wordCount <= 3 ? 0.45 : 0.55; 
 
   // --- Evaluate FAQ Vector Space ---
   let bestFAQMatch = null;
   let highestFAQScore = 0;
 
   for (const faq of allFAQs) {
-    const { question, answer, normQ, vector } = extractDocData(faq);
+    const { question, answer, normQ, vector, keywords } = extractDocData(faq);
 
     if (vector && vector.length > 0 && answer) {
       let score = cosineSimilarity(queryVector, vector);
       
+      // Question word overlap bonus
       if (hasWordOverlap(normalizedQuery, normQ)) {
-        score += 0.10; 
+        score += 0.08; 
+      }
+
+      // Explicit Keyword array bonus
+      const matchedKeyword = keywords.find(kw => normalizedQuery.includes(kw));
+      if (matchedKeyword) {
+        score += 0.12;
       }
 
       console.log(`  📐 [Vector Eval] Q: "${question.substring(0, 30)}..." | Score: ${score.toFixed(3)}`);
@@ -329,13 +358,18 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
   let highestKnowledgeScore = 0;
 
   for (const entry of allKnowledge) {
-    const { question, answer, normQ, vector } = extractDocData(entry);
+    const { question, answer, normQ, vector, keywords } = extractDocData(entry);
 
     if (vector && vector.length > 0 && answer) {
       let score = cosineSimilarity(queryVector, vector);
       
       if (hasWordOverlap(normalizedQuery, normQ)) {
-        score += 0.10;
+        score += 0.08;
+      }
+
+      const matchedKeyword = keywords.find(kw => normalizedQuery.includes(kw));
+      if (matchedKeyword) {
+        score += 0.12;
       }
 
       if (score > highestKnowledgeScore) {
