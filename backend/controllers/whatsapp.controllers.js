@@ -476,11 +476,11 @@ async function processSlowResponseInBackground({
       // Dispatch fallback response
       try {
         console.log("📤 Attempting outbound fallback message...");
-        console.log(`   From: ${businessNumber}`);
+        console.log(`   From: ${rawTo}`);
         console.log(`   To: ${rawFrom}`);
         console.log(`   Body: ${fallbackReply.substring(0, 50)}...`);
 
-        const result = await sendOutboundMessage(rawFrom, businessNumber, fallbackReply);
+        const result = await sendOutboundMessage(rawFrom, rawTo, fallbackReply);
         
         console.log("✅ Fallback message sent successfully!");
         console.log(`   SID: ${result.sid}`);
