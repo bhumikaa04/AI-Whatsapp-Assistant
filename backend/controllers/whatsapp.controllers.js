@@ -299,7 +299,7 @@ const { buildContextPrompt } = require("../services/promptBuilder.service");
 const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 // Your actual business WhatsApp number
-const BUSINESS_WHATSAPP_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+918750685404"; // FIXED: Use your actual business number
+const BUSINESS_WHATSAPP_NUMBER = process.env.BUSINESS_WHATSAPP_NUMBER || "+919871265404"; // FIXED: Use your actual business number
 const TWILIO_SANDBOX_NUMBER = "+14155238886";
 
 /**
