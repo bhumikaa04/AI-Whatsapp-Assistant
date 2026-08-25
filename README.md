@@ -4,7 +4,6 @@
 ![Node.js](https://img.shields.io/badge/Node.js-18+-339933)
 ![Express](https://img.shields.io/badge/Express-4.x-000000)
 ![MongoDB](https://img.shields.io/badge/MongoDB-Atlas%20%2F%20Local-47A248)
-![License](https://img.shields.io/badge/License-MIT-blue)
 
 **Replyly** is a hybrid RAG (Retrieval-Augmented Generation) WhatsApp support engine designed to handle customer queries with sub-second response times. It combines instant low-signal phrase matching, vector embedding similarity search, and an asynchronous Ollama LLM fallback worker.
 
