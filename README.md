@@ -155,5 +155,9 @@ POST /api/whatsapp/webhook
 Receives incoming Twilio WhatsApp payloads, processes low-signal greetings immediately, and hands heavy queries off to the background retrieval worker thread.
 
 ---
+## Screenshots of the chatbot 
+![](screenshots/img1.jpeg)
+![](screenshots/img2.jpeg)
+![](screenshots/img3.jpeg)
 
 
