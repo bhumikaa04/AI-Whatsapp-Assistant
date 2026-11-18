@@ -156,6 +156,4 @@ Receives incoming Twilio WhatsApp payloads, processes low-signal greetings immed
 
 ---
 
-## 🛡️ License
 
-This project is licensed under the MIT License.
