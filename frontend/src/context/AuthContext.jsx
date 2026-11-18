@@ -27,6 +27,7 @@ export function AuthProvider({ children }) {
       }
 
       console.log("🔄 Syncing user with backend:", firebaseUser.email);
+      console.log("🔄 Syncing user with backend:" , firebaseUser.id); 
       
       // Get fresh token
       const token = await firebaseUser.getIdToken(true); // Force refresh

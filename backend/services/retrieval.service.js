@@ -344,7 +344,7 @@ async function retrieveAnswerPipeline(expertSystemID, rawCustomerMessage) {
       );
       if (matchedKeyword) {
         score += 0.15; // Gives significant priority boost to keyword hits
-        appliedBoosts.push(`keyword "${matchedKeyword}" (+0.15)`);
+        appliedBoosts.push(`keyword "${matchedKeyword}" (+0.15)`); 
       }
 
       console.log(
