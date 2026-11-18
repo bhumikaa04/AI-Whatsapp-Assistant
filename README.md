@@ -156,8 +156,8 @@ Receives incoming Twilio WhatsApp payloads, processes low-signal greetings immed
 
 ---
 ## Screenshots of the chatbot 
-![](screenshots/img1.jpeg)
-![](screenshots/img2.jpeg)
-![](screenshots/img3.jpeg)
+| Chat 1 | Chat 2 | Chat 3 |
+| :---: | :---: | :---: |
+| <img src="screenshots/img1.jpeg" width="250" /> | <img src="screenshots/img2.jpeg" width="250" /> | <img src="screenshots/img3.jpeg" width="250" /> |
 
 
